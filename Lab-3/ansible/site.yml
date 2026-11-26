@@ -1,0 +1,10 @@
+---
+- name: Provision host and deploy the taskboard observability stack
+  hosts: taskboard_hosts
+  become: true
+  vars:
+    app_dir: /opt/taskboard
+    feature_priority_tasks: false   # override with -e feature_priority_tasks=true
+    lab3_source: "{{ playbook_dir }}/.."
+  roles:
+    - taskboard

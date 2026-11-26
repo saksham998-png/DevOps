@@ -1,0 +1,21 @@
+# "live" receives user traffic; "preview" always points at the idle colour for testing.
+# switch.sh swaps both selectors in one step each.
+apiVersion: v1
+kind: Service
+metadata:
+  name: taskboard-live
+  labels: { app: taskboard-bg, role: live }
+spec:
+  selector: { app: taskboard-bg, color: blue }
+  ports:
+    - { name: http, port: 80, targetPort: http }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: taskboard-preview
+  labels: { app: taskboard-bg, role: preview }
+spec:
+  selector: { app: taskboard-bg, color: green }
+  ports:
+    - { name: http, port: 80, targetPort: http }

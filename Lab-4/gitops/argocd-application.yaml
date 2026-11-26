@@ -1,0 +1,32 @@
+# ArgoCD watches Lab-4/k8s/overlays/prod in this repo and keeps the cluster equal to it.
+#   kubectl apply -n argocd -f Lab-4/gitops/argocd-application.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: taskboard-lab4
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/saksham998-png/DevOps.git
+    targetRevision: main
+    path: Lab-4/k8s/overlays/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: lab4
+  syncPolicy:
+    automated:
+      prune: true       # resources removed from Git are removed from the cluster
+      selfHeal: true    # manual kubectl edits are reverted
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff: { duration: 10s, factor: 2, maxDuration: 3m }
+  ignoreDifferences:
+    # the HPA owns the replica count, so don't fight it
+    - group: apps
+      kind: Deployment
+      jsonPointers: [/spec/replicas]

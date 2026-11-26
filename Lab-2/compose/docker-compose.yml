@@ -1,0 +1,35 @@
+name: lab2
+
+services:
+  web:
+    build: ..
+    image: taskboard:1.0.0
+    ports:
+      - "5000:5000"
+    environment:
+      APP_ENV: compose
+      REDIS_HOST: redis
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks: [backend]
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks: [backend]
+
+volumes:
+  redis-data:
+
+networks:
+  backend:
+    driver: bridge

@@ -1,0 +1,99 @@
+# Progressive canary with Argo Rollouts + NGINX ingress traffic splitting.
+# Both Services use the same selector; Argo Rollouts adds the pod-template-hash so
+# taskboard-stable only hits stable pods and taskboard-canary only hits canary pods.
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: taskboard
+spec:
+  replicas: 4
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: { app: taskboard-canary }
+  strategy:
+    canary:
+      stableService: taskboard-stable
+      canaryService: taskboard-canary
+      stableMetadata:
+        labels: { track: stable }
+      canaryMetadata:
+        labels: { track: canary }
+      trafficRouting:
+        nginx:
+          stableIngress: taskboard
+      # analysis runs for the whole rollout; 2 failed checks abort and shift traffic back
+      analysis:
+        templates:
+          - templateName: canary-error-rate
+        startingStep: 1
+      steps:
+        - setWeight: 10
+        - pause: { duration: 2m }
+        - setWeight: 25
+        - pause: { duration: 2m }
+        - setWeight: 50
+        - pause: { duration: 3m }
+        - setWeight: 100
+  template:
+    metadata:
+      labels: { app: taskboard-canary }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      serviceAccountName: taskboard
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: taskboard
+          image: ghcr.io/saksham998-png/taskboard-lab4:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: http, containerPort: 8080 }
+          envFrom:
+            - configMapRef: { name: taskboard-config }
+          env:
+            - { name: TRACK, value: rollout }
+            - { name: FAIL_RATE, value: "0" }
+          volumeMounts:
+            - { name: secrets, mountPath: /etc/taskboard/secrets, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+      volumes:
+        - name: secrets
+          secret: { secretName: taskboard-secrets, defaultMode: 0440 }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: canary-error-rate
+spec:
+  metrics:
+    - name: error-rate
+      interval: 30s
+      failureLimit: 1            # a second bad reading aborts the rollout
+      # no data yet (no traffic) counts as success so the first check doesn't abort
+      successCondition: len(result) == 0 || isNaN(result[0]) || result[0] < 0.02
+      provider:
+        prometheus:
+          address: http://prometheus.lab4.svc:9090
+          query: |
+            sum(rate(http_requests_total{app="taskboard-canary",pod_track="canary",route=~"/api/.*",status=~"5.."}[1m]))
+            /
+            sum(rate(http_requests_total{app="taskboard-canary",pod_track="canary",route=~"/api/.*"}[1m]))

@@ -1,0 +1,51 @@
+// Jenkins equivalent of .github/workflows/lab4-pipeline.yml.
+// Job: Pipeline script from SCM -> https://github.com/saksham998-png/DevOps.git, Script Path Lab-4/Jenkinsfile
+pipeline {
+    agent any
+    options { timeout(time: 30, unit: 'MINUTES'); timestamps(); disableConcurrentBuilds() }
+    environment { IMAGE = 'ghcr.io/saksham998-png/taskboard-lab4' }
+
+    stages {
+        stage('Setup') {
+            steps {
+                dir('Lab-4') {
+                    sh 'python3 -m venv .venv && . .venv/bin/activate && pip install -q -r requirements-dev.txt bandit pip-audit'
+                }
+            }
+        }
+        stage('Quality gates') {
+            parallel {
+                stage('Tests + coverage') {
+                    steps {
+                        dir('Lab-4') {
+                            sh '. .venv/bin/activate && python -m pytest -v --cov=app --cov-fail-under=90 --junitxml=reports/junit.xml'
+                        }
+                    }
+                    post { always { junit 'Lab-4/reports/junit.xml' } }
+                }
+                stage('SAST') {
+                    steps { dir('Lab-4') { sh '. .venv/bin/activate && bandit -r app -ll && pip-audit -r requirements.txt' } }
+                }
+                stage('Manifests') {
+                    steps { sh 'for d in base blue-green canary monitoring; do kubectl kustomize Lab-4/k8s/$d >/dev/null; done' }
+                }
+            }
+        }
+        stage('Build image') {
+            steps {
+                script { env.TAG = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim() }
+                sh 'docker build --build-arg APP_VERSION=$TAG -t $IMAGE:$TAG Lab-4'
+            }
+        }
+        stage('Push image') {
+            when { expression { env.GIT_BRANCH == 'origin/main' } }
+            steps {
+                // Jenkins credential "ghcr" = username + GitHub PAT with write:packages
+                withCredentials([usernamePassword(credentialsId: 'ghcr', usernameVariable: 'U', passwordVariable: 'P')]) {
+                    sh 'echo "$P" | docker login ghcr.io -u "$U" --password-stdin && docker push $IMAGE:$TAG'
+                }
+            }
+        }
+    }
+    post { cleanup { deleteDir() } }
+}

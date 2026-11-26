@@ -1,0 +1,8 @@
+# Apply after k8s/base (needs its namespace, ConfigMap, Redis and secret).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: lab4
+resources:
+  - blue.yaml
+  - green.yaml
+  - services.yaml

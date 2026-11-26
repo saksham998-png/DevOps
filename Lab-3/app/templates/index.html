@@ -1,0 +1,14 @@
+<!doctype html>
+<html>
+<head><title>Taskboard</title></head>
+<body>
+  <h1 id="title">Taskboard</h1>
+  <p>Version <span id="version">{{ version }}</span></p>
+  <p>Priority tasks: <strong id="flag-priority">{{ "ON" if priority else "OFF" }}</strong></p>
+  <ul id="tasks">
+    {%- for task in tasks %}
+    <li>{{ task.title }}</li>
+    {%- endfor %}
+  </ul>
+</body>
+</html>

@@ -1,0 +1,10 @@
+# What ArgoCD deploys. CI updates `newTag` below on every green build of main;
+# nobody runs kubectl apply against the cluster by hand.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+  - ../../secrets
+images:
+  - name: ghcr.io/saksham998-png/taskboard-lab4
+    newTag: latest

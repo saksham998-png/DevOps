@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskboard-blue
+  labels: { app: taskboard-bg, color: blue }
+spec:
+  replicas: 3
+  selector:
+    matchLabels: { app: taskboard-bg, color: blue }
+  template:
+    metadata:
+      labels: { app: taskboard-bg, color: blue }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      serviceAccountName: taskboard
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: taskboard
+          image: ghcr.io/saksham998-png/taskboard-lab4:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: http, containerPort: 8080 }
+          envFrom:
+            - configMapRef: { name: taskboard-config }
+          env:
+            - { name: TRACK, value: blue }
+            - { name: APP_VERSION, value: "1.0.0" }
+          volumeMounts:
+            - { name: secrets, mountPath: /etc/taskboard/secrets, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+            failureThreshold: 2
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          lifecycle:
+            # give the Service time to drop this pod before gunicorn stops
+            preStop:
+              exec: { command: ["sleep", "5"] }
+      volumes:
+        - name: secrets
+          secret:
+            secretName: taskboard-secrets
+            defaultMode: 0440
+        - name: tmp
+          emptyDir: {}

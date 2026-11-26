@@ -1,0 +1,80 @@
+# Monitoring only:     docker compose up -d --build
+# Monitoring + ELK:    docker compose --profile logging up -d --build   (needs ~3 GB free RAM)
+name: lab3
+
+services:
+  taskboard:
+    build: ..
+    image: taskboard:lab3
+    ports: ["8000:8000"]
+    environment:
+      FLAGS_FILE: /config/flags.json
+    volumes:
+      - ${FLAGS_PATH:-./flags.json}:/config/flags.json:ro   # edit this file to flip flags live
+    labels:
+      lab3.logs: "true"
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    ports: ["9090:9090"]
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    depends_on: [taskboard]
+
+  grafana:
+    image: grafana/grafana:11.2.2
+    ports: ["3000:3000"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change-me}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on: [prometheus]
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    profiles: [logging]
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"   # lab only; turn security on for anything real
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    ports: ["9200:9200"]
+    volumes: [es-data:/usr/share/elasticsearch/data]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      retries: 30
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.15.3
+    profiles: [logging]
+    volumes:
+      - ./logging/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+    environment:
+      LS_JAVA_OPTS: -Xms256m -Xmx256m
+    depends_on:
+      elasticsearch: { condition: service_healthy }
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.15.3
+    profiles: [logging]
+    ports: ["5601:5601"]
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    depends_on:
+      elasticsearch: { condition: service_healthy }
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.15.3
+    profiles: [logging]
+    user: root
+    command: ["filebeat", "-e", "--strict.perms=false"]
+    volumes:
+      - ./logging/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on: [logstash]
+
+volumes:
+  es-data:

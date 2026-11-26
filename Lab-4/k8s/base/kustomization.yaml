@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: lab4
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: taskboard-lab4
+    includeSelectors: false
+resources:
+  - namespace.yaml
+  - resources.yaml
+  - redis.yaml
+  - deployment.yaml
+# The Secret "taskboard-secrets" (keys: db_password, api_key) is NOT in Git.
+# It is created by External Secrets from Vault (../secrets) or by scripts/create-local-secret.sh.

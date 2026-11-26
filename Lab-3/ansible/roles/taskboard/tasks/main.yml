@@ -1,0 +1,68 @@
+---
+- name: Install Docker and prerequisites
+  ansible.builtin.apt:
+    name: [ca-certificates, curl, python3, docker.io, docker-compose-v2]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Make sure Docker is running and starts on boot
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Let the login user run docker without sudo
+  ansible.builtin.user:
+    name: "{{ ansible_env.SUDO_USER | default(ansible_user_id) }}"
+    groups: docker
+    append: true
+
+- name: Create the application directory
+  ansible.builtin.file:
+    path: "{{ app_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Copy application source and observability config
+  ansible.builtin.copy:
+    src: "{{ lab3_source }}/{{ item }}"
+    dest: "{{ app_dir }}/"
+    mode: preserve
+  loop: [app, Dockerfile, requirements.txt, observability]
+  notify: Restart stack
+
+- name: Render feature flags
+  ansible.builtin.template:
+    src: flags.json.j2
+    dest: "{{ app_dir }}/flags.json"
+    mode: "0644"
+  # no restart needed: the app re-reads this file on every request
+
+- name: Start the stack
+  ansible.builtin.command:
+    cmd: docker compose up -d --build
+    chdir: "{{ app_dir }}/observability"
+  environment:
+    FLAGS_PATH: "{{ app_dir }}/flags.json"
+  register: compose_up
+  changed_when: "'Started' in compose_up.stderr or 'Created' in compose_up.stderr or 'Recreated' in compose_up.stderr"
+
+- name: Wait for the app to report healthy
+  ansible.builtin.uri:
+    url: http://localhost:8000/health
+    status_code: 200
+  register: health
+  until: health.status == 200
+  retries: 15
+  delay: 4
+
+- name: Show the active feature flags
+  ansible.builtin.uri:
+    url: http://localhost:8000/api/flags
+    return_content: true
+  register: flags
+
+- name: Report
+  ansible.builtin.debug:
+    msg: "taskboard healthy; flags = {{ flags.json }}"

@@ -1,0 +1,17 @@
+filebeat.inputs:
+  - type: container
+    paths:
+      - /var/lib/docker/containers/*/*.log
+
+processors:
+  - add_docker_metadata:
+      host: unix:///var/run/docker.sock
+  # keep only containers labelled lab3.logs=true (the taskboard service)
+  - drop_event:
+      when:
+        not:
+          equals:
+            container.labels.lab3_logs: "true"
+
+output.logstash:
+  hosts: ["logstash:5044"]

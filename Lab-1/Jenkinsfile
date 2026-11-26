@@ -1,0 +1,86 @@
+// Declarative pipeline for Lab 1. In Jenkins create a "Pipeline script from SCM" job
+// pointing at https://github.com/saksham998-png/DevOps.git with Script Path: Lab-1/Jenkinsfile
+pipeline {
+    agent any
+
+    options {
+        timeout(time: 15, unit: 'MINUTES')
+        timestamps()
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
+
+    triggers {
+        githubPush()             // needs the GitHub plugin + a webhook to /github-webhook/
+        pollSCM('H/15 * * * *')  // fallback if the webhook can't reach Jenkins
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+                sh 'git log -1 --pretty="format:%h %an: %s"'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                dir('Lab-1') {
+                    sh '''
+                        python3 -m venv .venv
+                        . .venv/bin/activate
+                        pip install --quiet -r requirements.txt
+                        python -m py_compile app/app.py
+                    '''
+                }
+            }
+        }
+
+        stage('Test') {
+            steps {
+                dir('Lab-1') {
+                    sh '''
+                        . .venv/bin/activate
+                        python -m pytest -v --junitxml=reports/junit.xml
+                    '''
+                }
+            }
+            post {
+                always { junit 'Lab-1/reports/junit.xml' }
+            }
+        }
+
+        stage('Package') {
+            steps {
+                dir('Lab-1') {
+                    sh 'mkdir -p dist && tar -czf dist/taskboard-${BUILD_NUMBER}.tar.gz app requirements.txt Dockerfile'
+                }
+            }
+            post {
+                success { archiveArtifacts artifacts: 'Lab-1/dist/*.tar.gz', fingerprint: true }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                dir('Lab-1') {
+                    sh 'bash scripts/deploy.sh'
+                }
+            }
+        }
+
+        stage('Smoke Test') {
+            steps {
+                sh 'curl -fsS http://localhost:5000/health'
+                sh '''curl -fsS -X POST -H "Content-Type: application/json" \
+                      -d '{"title":"smoke test"}' http://localhost:5000/api/tasks'''
+            }
+        }
+    }
+
+    post {
+        success { echo "Build #${env.BUILD_NUMBER} passed." }
+        failure { echo "Build #${env.BUILD_NUMBER} failed - check the stage logs above." }
+        cleanup { deleteDir() }
+    }
+}

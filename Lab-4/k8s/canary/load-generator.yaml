@@ -1,0 +1,26 @@
+# Steady user traffic through the ingress (so the weighted split applies).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: load-generator
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: load-generator }
+  template:
+    metadata:
+      labels: { app: load-generator }
+    spec:
+      containers:
+        - name: curl
+          image: curlimages/curl:8.11.1
+          command: ["sh", "-c"]
+          args:
+            - |
+              while true; do
+                curl -s -o /dev/null -H 'Host: taskboard.lab4.local' http://ingress-nginx-controller.ingress-nginx.svc/api/tasks
+                sleep 0.05
+              done
+          resources:
+            requests: { cpu: 20m, memory: 16Mi }
+            limits: { cpu: 100m, memory: 32Mi }

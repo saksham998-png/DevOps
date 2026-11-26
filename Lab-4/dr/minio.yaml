@@ -1,0 +1,79 @@
+# Lab backup target. In production this would be real object storage in another
+# region/account, not inside the cluster being protected.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-data
+  namespace: minio
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: minio
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: minio }
+  template:
+    metadata:
+      labels: { app: minio }
+    spec:
+      containers:
+        - name: minio
+          image: quay.io/minio/minio:RELEASE.2024-11-07T00-52-20Z
+          args: ["server", "/data", "--console-address", ":9001"]
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom: { secretKeyRef: { name: minio-root, key: user } }
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom: { secretKeyRef: { name: minio-root, key: password } }
+          ports:
+            - containerPort: 9000
+            - containerPort: 9001
+          readinessProbe:
+            httpGet: { path: /minio/health/ready, port: 9000 }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: minio-data }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: minio
+spec:
+  selector: { app: minio }
+  ports:
+    - { name: api, port: 9000 }
+    - { name: console, port: 9001 }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-make-bucket
+  namespace: minio
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: quay.io/minio/mc:RELEASE.2024-11-05T11-29-45Z
+          env:
+            - name: USER
+              valueFrom: { secretKeyRef: { name: minio-root, key: user } }
+            - name: PASS
+              valueFrom: { secretKeyRef: { name: minio-root, key: password } }
+          command: ["sh", "-c"]
+          args:
+            - mc alias set lab http://minio:9000 "$USER" "$PASS" && mc mb --ignore-existing lab/velero

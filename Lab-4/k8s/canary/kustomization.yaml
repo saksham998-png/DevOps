@@ -1,0 +1,9 @@
+# Needs: k8s/base (namespace, config, redis, secret), k8s/monitoring, the Argo Rollouts
+# controller, and the NGINX ingress controller (minikube addons enable ingress).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: lab4
+resources:
+  - rollout.yaml
+  - services.yaml
+  - load-generator.yaml

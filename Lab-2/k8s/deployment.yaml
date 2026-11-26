@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskboard
+  labels: { app: taskboard }
+  annotations:
+    kubernetes.io/change-cause: "initial release 1.0.0"
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels: { app: taskboard }
+  template:
+    metadata:
+      labels: { app: taskboard }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: taskboard
+          image: taskboard:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5000
+          envFrom:
+            - configMapRef:
+                name: taskboard-config
+          resources:
+            requests: { cpu: 100m, memory: 96Mi }
+            limits: { cpu: 300m, memory: 192Mi }
+          readinessProbe:
+            httpGet: { path: /readyz, port: 5000 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: 5000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10

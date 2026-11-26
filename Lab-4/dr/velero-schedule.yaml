@@ -1,0 +1,13 @@
+# Hourly backup of the lab4 namespace including Redis' PVC data (file-system backup).
+# RPO is at most 1 hour; keep 7 days of backups.
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: lab4-hourly
+  namespace: velero
+spec:
+  schedule: "0 * * * *"
+  template:
+    includedNamespaces: [lab4]
+    defaultVolumesToFsBackup: true
+    ttl: 168h0m0s

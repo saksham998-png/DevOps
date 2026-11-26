@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: taskboard-stable
+spec:
+  selector: { app: taskboard-canary }
+  ports:
+    - { name: http, port: 80, targetPort: http }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: taskboard-canary
+spec:
+  selector: { app: taskboard-canary }
+  ports:
+    - { name: http, port: 80, targetPort: http }
+---
+# Argo Rollouts creates and manages the matching "-canary" Ingress with the weight.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: taskboard
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: taskboard.lab4.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: taskboard-stable
+                port: { name: http }
